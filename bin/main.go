@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"go_telnet/telnet"
 	"os"
-	"telnet/src/telnet"
 )
 
 func show(recv string) {
