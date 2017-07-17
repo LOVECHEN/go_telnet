@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	//	"io"
+	"io"
 	"net"
+	"os"
 )
 
 /*
@@ -88,6 +89,8 @@ type Client struct {
 	recvque chan []byte
 	sendque chan []byte
 
+	shutdown chan int
+
 	handler func([]byte)
 }
 
@@ -107,6 +110,7 @@ func (c *Client) Connect(handler func([]byte)) error {
 	c.recvque = make(chan []byte, 1024)
 	c.sendque = make(chan []byte, 1024)
 	c.sendcmd = make(chan []byte, 1024)
+	c.shutdown = make(chan int)
 
 	c.socket, err = net.Dial("tcp", serveraddr)
 	if err != nil {
@@ -114,7 +118,7 @@ func (c *Client) Connect(handler func([]byte)) error {
 		return err
 	}
 
-	fmt.Println(c)
+	//fmt.Println(c)
 
 	fmt.Println("telnet.Connect success")
 
@@ -316,11 +320,11 @@ func cmdProc(buf []byte, sendcmd chan []byte) []byte {
 	if p.parse < len(p.buf) {
 		return p.buf[p.parse:]
 	} else {
-		return make([]byte,0)
+		return make([]byte, 0)
 	}
 }
 
-func send(c *Client, buf []byte) error {
+func socketsend(c *Client, buf []byte) error {
 	var temp = 0
 	total := len(buf)
 
@@ -345,7 +349,7 @@ func send(c *Client, buf []byte) error {
 	return nil
 }
 
-func recv(c *Client) ([]byte, error) {
+func socketrecv(c *Client) ([]byte, error) {
 	var buf [512]byte
 
 	//fmt.Println("recv...")
@@ -370,16 +374,12 @@ func recv(c *Client) ([]byte, error) {
 	return result.Bytes(), nil
 }
 
-func parsebuf(buf []byte) string {
-
-}
-
 func recvtask(c *Client) {
 
 	fmt.Println("Recv Task init")
 
 	for {
-		tempbuf, err := recv(c)
+		tempbuf, err := socketrecv(c)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Println("Time out : close session.")
@@ -389,9 +389,9 @@ func recvtask(c *Client) {
 			}
 			break
 		}
-		
+
 		//fmt.Println(tempbuf)
-		
+
 		for i, v := range tempbuf {
 			if v == CMD_IAC {
 				lastbuf := cmdProc(tempbuf[i:], c.sendcmd)
@@ -400,26 +400,38 @@ func recvtask(c *Client) {
 			}
 		}
 
-		c.recvque <- parsebuf(tempbuf[0:])
+		c.recvque <- tempbuf
 	}
 }
 
 func sendtask(c *Client) {
-
-	fmt.Println("Send Task init")
-	err := errors.New("")
-
 	for {
 		select {
 		case buf := <-c.sendcmd:
-			err = send(c, buf)
+			{
+				err := socketsend(c, buf)
+				if err != nil {
+					fmt.Println("send failed: ", err.Error())
+					break
+				}
+			}
 		case str := <-c.sendque:
-			err = send(c, str)
-		}
-
-		if err != nil {
-			fmt.Println("send failed: ", err.Error())
-			break
+			{
+				err := socketsend(c, str)
+				if err != nil {
+					fmt.Println("send failed: ", err.Error())
+					break
+				}
+			}
+		case recv := <-c.recvque:
+			{
+				c.handler(recv)
+			}
+		case <-c.shutdown:
+			{
+				fmt.Println("shutdown sendtask")
+				return
+			}
 		}
 	}
 }
@@ -430,13 +442,11 @@ func (c *Client) Process() error {
 		return errors.New("The handler mast been register.")
 	}
 
-	go recvtask(c)
 	go sendtask(c)
 
-	for {
-		recv := <-c.recvque
-		c.handler(recv)
-	}
+	recvtask(c)
+
+	c.shutdown <- 0
 
 	return errors.New("shutdown")
 }
@@ -447,4 +457,8 @@ func (c *Client) Write(send []byte) {
 
 func (c *Client) Delete() {
 	c.socket.Close()
+	close(c.shutdown)
+	close(c.recvque)
+	close(c.sendcmd)
+	close(c.sendque)
 }
