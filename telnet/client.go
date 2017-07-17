@@ -85,17 +85,17 @@ type Client struct {
 	socket net.Conn
 
 	sendcmd chan []byte
-	recvque chan string
-	sendque chan string
+	recvque chan []byte
+	sendque chan []byte
 
-	handler func(recv string)
+	handler func([]byte)
 }
 
 func NewClient(ip string, port string) *Client {
 	return &Client{ServerIP: ip, ServerPort: port}
 }
 
-func (c *Client) Connect(handler func(recv string)) error {
+func (c *Client) Connect(handler func([]byte)) error {
 
 	var err error
 
@@ -104,8 +104,8 @@ func (c *Client) Connect(handler func(recv string)) error {
 	//fmt.Println(serveraddr)
 
 	c.handler = handler
-	c.recvque = make(chan string, 128)
-	c.sendque = make(chan string, 128)
+	c.recvque = make(chan []byte, 1024)
+	c.sendque = make(chan []byte, 1024)
 	c.sendcmd = make(chan []byte, 1024)
 
 	c.socket, err = net.Dial("tcp", serveraddr)
@@ -381,12 +381,16 @@ func recvtask(c *Client) {
 	for {
 		tempbuf, err := recv(c)
 		if err != nil {
-			fmt.Println("RecvTask failed: ", err.Error())
+			if err == io.EOF {
+				fmt.Println("Time out : close session.")
+				os.Exit(0)
+			} else {
+				fmt.Println("RecvTask failed: ", err.Error())
+			}
 			break
 		}
 		
-		//debug
-		fmt.Println(tempbuf)
+		//fmt.Println(tempbuf)
 		
 		for i, v := range tempbuf {
 			if v == CMD_IAC {
@@ -410,7 +414,7 @@ func sendtask(c *Client) {
 		case buf := <-c.sendcmd:
 			err = send(c, buf)
 		case str := <-c.sendque:
-			err = send(c, []byte(str))
+			err = send(c, str)
 		}
 
 		if err != nil {
@@ -437,7 +441,7 @@ func (c *Client) Process() error {
 	return errors.New("shutdown")
 }
 
-func (c *Client) Write(send string) {
+func (c *Client) Write(send []byte) {
 	c.sendque <- send
 }
 
