@@ -208,6 +208,7 @@ func rsp_sb(req cmdoption) cmdoption {
 			rsp.option[0] = OP_TERM_TYPE
 			rsp.option[1] = 0
 			rsp.option = append(rsp.option, []byte("LINUX")...)
+			rsp.option = append(rsp.option, 0)
 			rsp.option = append(rsp.option, 5)
 			rsp.option = append(rsp.option, CMD_IAC)
 			rsp.option = append(rsp.option, CMD_SE)
@@ -250,7 +251,6 @@ func getcmdopt(p *parsebuf) *cmdoption {
 	}
 
 	if p.buf[parse] != CMD_IAC {
-		p.parse = parse + 1
 		return nil
 	}
 
@@ -269,7 +269,7 @@ func getcmdopt(p *parsebuf) *cmdoption {
 	co.cmd = p.buf[parse+1]
 	co.option[0] = p.buf[parse+2]
 
-	parse = parse + 2
+	parse = parse + 3
 
 	if co.cmd == CMD_SB {
 		for parse < len(p.buf) {
@@ -304,8 +304,9 @@ func cmdProc(buf []byte, sendcmd chan []byte) []byte {
 		rsp := rspcmdopt(*co)
 		if rsp.cmd != 0 {
 
-			cmdbuf := make([]byte, 0)
-			cmdbuf = append(cmdbuf, rsp.cmd)
+			cmdbuf := make([]byte, 2)
+			cmdbuf[0] = CMD_IAC
+			cmdbuf[1] = rsp.cmd
 			cmdbuf = append(cmdbuf, rsp.option...)
 
 			sendcmd <- cmdbuf
@@ -315,7 +316,7 @@ func cmdProc(buf []byte, sendcmd chan []byte) []byte {
 	if p.parse < len(p.buf) {
 		return p.buf[p.parse:]
 	} else {
-		return nil
+		return make([]byte,0)
 	}
 }
 
@@ -323,12 +324,12 @@ func send(c *Client, buf []byte) error {
 	var temp = 0
 	total := len(buf)
 
-	fmt.Println("send...")
+	//fmt.Println("send...")
 
 	for {
 		n, err := c.socket.Write(buf[temp:])
 
-		fmt.Println(buf[temp:])
+		//fmt.Println(buf[temp:])
 
 		if err != nil {
 			return err
@@ -347,7 +348,7 @@ func send(c *Client, buf []byte) error {
 func recv(c *Client) ([]byte, error) {
 	var buf [512]byte
 
-	fmt.Println("recv...")
+	//fmt.Println("recv...")
 
 	result := bytes.NewBuffer(nil)
 
@@ -364,56 +365,47 @@ func recv(c *Client) ([]byte, error) {
 		}
 	}
 
-	fmt.Println(result.Bytes())
+	//fmt.Println(result.Bytes())
 
 	return result.Bytes(), nil
+}
+
+func parsebuf(buf []byte) string {
+
 }
 
 func recvtask(c *Client) {
 
 	fmt.Println("Recv Task init")
 
-	lastbuf := make([]byte, 0)
-
 	for {
 		tempbuf, err := recv(c)
-
 		if err != nil {
 			fmt.Println("RecvTask failed: ", err.Error())
 			break
 		}
-
+		
 		//debug
-
 		fmt.Println(tempbuf)
-		//fmt.Println(string(tempbuf))
-
-		lastbuf = append(lastbuf, tempbuf...)
-
-		for i, v := range lastbuf {
+		
+		for i, v := range tempbuf {
 			if v == CMD_IAC {
-				tempbuf = cmdProc(lastbuf[i:], c.sendcmd)
-				if tempbuf != nil {
-					lastbuf = append(lastbuf[0:i], tempbuf...)
-				}
+				lastbuf := cmdProc(tempbuf[i:], c.sendcmd)
+				tempbuf = append(tempbuf[0:i], lastbuf...)
 				break
 			}
 		}
 
-		c.recvque <- string(lastbuf[0:])
-
-		lastbuf = make([]byte, 0)
+		c.recvque <- parsebuf(tempbuf[0:])
 	}
 }
 
 func sendtask(c *Client) {
 
 	fmt.Println("Send Task init")
-
 	err := errors.New("")
 
 	for {
-
 		select {
 		case buf := <-c.sendcmd:
 			err = send(c, buf)
