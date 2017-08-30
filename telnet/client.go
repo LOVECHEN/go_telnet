@@ -71,6 +71,7 @@ const (
 	OP_ENV_VAR    = 36 //	环境变量
 )
 
+// 通用常量类型定义
 const (
 	MODE_CHAR       = 1
 	MODE_LINE       = 2
@@ -78,6 +79,7 @@ const (
 	CONNECT_TIMEOUT = 10
 )
 
+// telnet客户端结构
 type Client struct {
 	ServerIP   string
 	ServerPort string
@@ -94,10 +96,12 @@ type Client struct {
 	handler func([]byte)
 }
 
+// 申请一个telnet客户端资源，输入telnet服务端IP+PORT
 func NewClient(ip string, port string) *Client {
 	return &Client{ServerIP: ip, ServerPort: port}
 }
 
+// 客户端与服务端建立连接，输入用户的handler，处理telnet服务端内容；
 func (c *Client) Connect(handler func([]byte)) error {
 
 	var err error
@@ -125,16 +129,19 @@ func (c *Client) Connect(handler func([]byte)) error {
 	return nil
 }
 
+// 【内部结构】发送命令数据结构
 type cmdoption struct {
 	cmd    byte
 	option []byte
 }
 
+// 【内部结构】解析缓存数据结构
 type parsebuf struct {
 	buf   []byte
 	parse int
 }
 
+// 服务端发送过来的命令字处理方法，输入服务端的命令字，返回客户端回应的命令字；
 func rsp_do(req cmdoption) cmdoption {
 	var rsp cmdoption
 	rsp.option = make([]byte, 1)
@@ -160,6 +167,7 @@ func rsp_do(req cmdoption) cmdoption {
 	return rsp
 }
 
+// 处理will命令方法
 func rsp_will(req cmdoption) cmdoption {
 	var rsp cmdoption
 	rsp.option = make([]byte, 1)
@@ -290,6 +298,7 @@ func getcmdopt(p *parsebuf) *cmdoption {
 	return &co
 }
 
+// 处理
 func cmdProc(buf []byte, sendcmd chan []byte) []byte {
 
 	var p parsebuf
@@ -324,6 +333,7 @@ func cmdProc(buf []byte, sendcmd chan []byte) []byte {
 	}
 }
 
+// 向服务端发送报文的方法
 func socketsend(c *Client, buf []byte) error {
 	var temp = 0
 	total := len(buf)
@@ -349,6 +359,7 @@ func socketsend(c *Client, buf []byte) error {
 	return nil
 }
 
+// 从服务端接收报文的方法
 func socketrecv(c *Client) ([]byte, error) {
 	var buf [512]byte
 
@@ -374,6 +385,7 @@ func socketrecv(c *Client) ([]byte, error) {
 	return result.Bytes(), nil
 }
 
+// 接收任务，用于处理接收请求
 func recvtask(c *Client) {
 
 	fmt.Println("Recv Task init")
@@ -404,6 +416,7 @@ func recvtask(c *Client) {
 	}
 }
 
+// 发送任务，用于向服务端发送数据&命令；
 func sendtask(c *Client) {
 	for {
 		select {
@@ -436,6 +449,7 @@ func sendtask(c *Client) {
 	}
 }
 
+// 客户端启动函数，启动收发处理任务；
 func (c *Client) Process() error {
 
 	if nil == c.handler {
@@ -451,10 +465,12 @@ func (c *Client) Process() error {
 	return errors.New("shutdown")
 }
 
+// 用户向服务端发送的接口
 func (c *Client) Write(send []byte) {
 	c.sendque <- send
 }
 
+// 销毁telnet客户端资源
 func (c *Client) Delete() {
 	c.socket.Close()
 	close(c.shutdown)
