@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"go_telnet/telnet"
+	"github.com/lixiangyun/go_telnet/telnet"
 	"os"
 )
 
