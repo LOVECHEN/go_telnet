@@ -6,4 +6,4 @@ go:
   - "1.10.x"
   - master
 
-script: go build -v ./bin/
+script: go build -v -o ctelnet ./bin/
